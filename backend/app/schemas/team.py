@@ -92,3 +92,11 @@ class SquadMember(BaseModel):
     name: str
     player_role: str
     joined_at: date
+
+
+class SquadAdd(BaseModel):
+    """Request body for POST /teams/{id}/squad."""
+
+    player_id: int = Field(gt=0, examples=[1])
+    #: Defaults to today in the route if omitted.
+    joined_at: date | None = None

@@ -1,4 +1,6 @@
-"""CRUD endpoints for teams."""
+"""CRUD endpoints for teams, including squad membership."""
+
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
@@ -7,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Player, Team, TeamPlayer
 from app.db.session import get_db
-from app.schemas.team import SquadMember, TeamCreate, TeamRead, TeamUpdate
+from app.schemas.team import SquadAdd, SquadMember, TeamCreate, TeamRead, TeamUpdate
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 
@@ -140,3 +142,91 @@ def team_squad(team_id: int, db: Session = Depends(get_db)):
         .where(TeamPlayer.team_id == team_id, TeamPlayer.is_active)
         .order_by(func.lower(Player.name))
     ).all()
+
+
+@router.post(
+    "/{team_id}/squad",
+    response_model=SquadMember,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_to_squad(
+    team_id: int, payload: SquadAdd, db: Session = Depends(get_db)
+) -> SquadMember:
+    """Add a player to a team's squad, opening a new stint.
+
+    No "is this player already in the squad?" SELECT first. Between that check
+    and the INSERT another request could slip in and both would succeed. The
+    partial unique index `uq_team_players_active` is the real guarantee, so we
+    attempt the insert and translate its complaint instead.
+    """
+    get_team_or_404(team_id, db)
+    player = db.get(Player, payload.player_id)
+    if player is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No player with id {payload.player_id}",
+        )
+
+    stint = TeamPlayer(
+        team_id=team_id,
+        player_id=player.id,
+        joined_at=payload.joined_at or date.today(),
+    )
+    db.add(stint)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if constraint_name(exc) == "uq_team_players_active":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{player.name} is already in this squad.",
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Squad membership violates a database constraint.",
+        ) from exc
+
+    db.refresh(stint)
+    return SquadMember(
+        id=player.id,
+        name=player.name,
+        player_role=player.player_role,
+        joined_at=stint.joined_at,
+    )
+
+
+@router.delete(
+    "/{team_id}/squad/{player_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def remove_from_squad(
+    team_id: int, player_id: int, db: Session = Depends(get_db)
+) -> Response:
+    """End a player's stint at a team.
+
+    This deliberately does NOT delete the row. Setting `left_at` closes the
+    stint, so "who played for us in 2026?" stays answerable. PostgreSQL then
+    flips the generated `is_active` column to false on its own, and
+    GET /teams/{id}/squad stops listing them with no change to that endpoint.
+    """
+    get_team_or_404(team_id, db)
+
+    stint = db.scalars(
+        select(TeamPlayer).where(
+            TeamPlayer.team_id == team_id,
+            TeamPlayer.player_id == player_id,
+            TeamPlayer.left_at.is_(None),
+        )
+    ).first()
+    if stint is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Player {player_id} is not currently in this squad",
+        )
+
+    today = date.today()
+    # The date_order CHECK forbids left_at < joined_at, which would otherwise
+    # fire when adding and removing a player on the same day it was backdated.
+    stint.left_at = max(today, stint.joined_at)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
