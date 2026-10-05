@@ -1,6 +1,12 @@
-fastapi
-uvicorn[standard]
-pydantic-settings
-sqlalchemy>=2.0
-alembic
-psycopg[binary]
+# Direct dependencies, pinned so a clone on another machine gets the same
+# versions. Developed on Python 3.14.
+#
+# `~=` allows patch updates but not minor ones, so `~=2.0.52` accepts 2.0.53
+# but never 2.1.0 - close enough to pick up fixes, tight enough to avoid a
+# breaking change arriving silently on a fresh install.
+fastapi~=0.141.1
+uvicorn[standard]~=0.52.4
+pydantic-settings~=2.15.0
+sqlalchemy~=2.0.52
+alembic~=1.19.1
+psycopg[binary]~=3.3.5
