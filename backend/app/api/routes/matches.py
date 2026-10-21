@@ -13,7 +13,9 @@ from app.schemas.match import (
     MatchSquadCreate,
     MatchUpdate,
 )
+from app.schemas.scorecard import MatchScorecard
 from app.services import match as match_service
+from app.services import scorecard as scorecard_service
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -81,3 +83,11 @@ def get_match_players(
 ) -> list[MatchPlayer]:
     """Get players named for the match, sorted by batting position."""
     return match_service.get_match_players(db, match_id, team_id=team_id)
+
+
+@router.get("/{match_id}/scorecard", response_model=MatchScorecard)
+def get_match_scorecard(
+    match_id: int, db: Session = Depends(get_db)
+) -> MatchScorecard:
+    """Get complete scorecard for all innings in a match."""
+    return scorecard_service.get_match_scorecard(db, match_id)

@@ -19,6 +19,8 @@ from app.db.models import Player
 from app.db.models.enums import PlayerRole
 from app.db.session import get_db
 from app.schemas.player import PlayerCreate, PlayerRead, PlayerUpdate
+from app.schemas.scorecard import PlayerStatistics
+from app.services import scorecard as scorecard_service
 
 router = APIRouter(prefix="/players", tags=["players"])
 
@@ -68,6 +70,14 @@ def list_players(
 @router.get("/{player_id}", response_model=PlayerRead)
 def get_player(player_id: int, db: Session = Depends(get_db)) -> Player:
     return get_player_or_404(player_id, db)
+
+
+@router.get("/{player_id}/statistics", response_model=PlayerStatistics)
+def get_player_statistics(
+    player_id: int, db: Session = Depends(get_db)
+) -> PlayerStatistics:
+    """Get aggregated career statistics for a player."""
+    return scorecard_service.get_player_statistics(db, player_id)
 
 
 @router.patch("/{player_id}", response_model=PlayerRead)

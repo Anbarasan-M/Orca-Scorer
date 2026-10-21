@@ -7,6 +7,8 @@ from app.db.models import Delivery, Innings
 from app.db.session import get_db
 from app.schemas.delivery import DeliveryCreate, DeliveryRead, ScoringStateResponse
 from app.schemas.innings import InningsCreate, InningsRead
+from app.schemas.scorecard import InningsScorecard
+from app.services import scorecard as scorecard_service
 from app.services import scoring as scoring_service
 
 router = APIRouter(prefix="/innings", tags=["scoring"])
@@ -24,6 +26,14 @@ def create_innings(
 def get_innings(innings_id: int, db: Session = Depends(get_db)) -> Innings:
     """Get details of an innings."""
     return scoring_service.get_innings_or_404(db, innings_id)
+
+
+@router.get("/{innings_id}/scorecard", response_model=InningsScorecard)
+def get_innings_scorecard(
+    innings_id: int, db: Session = Depends(get_db)
+) -> InningsScorecard:
+    """Get complete batting and bowling scorecard for an innings."""
+    return scorecard_service.get_innings_scorecard(db, innings_id)
 
 
 @router.post(
