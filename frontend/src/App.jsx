@@ -6,6 +6,8 @@ import OverTicker from './components/OverTicker';
 import ScoringKeypad from './components/ScoringKeypad';
 import WicketModal from './components/WicketModal';
 import ScorecardView from './components/ScorecardView';
+import TeamsPlayersView from './components/TeamsPlayersView';
+import NewMatchModal from './components/NewMatchModal';
 import './App.css';
 
 export default function App() {
@@ -25,28 +27,30 @@ export default function App() {
 
   const [isOverComplete, setIsOverComplete] = useState(false);
   const [isWicketModalOpen, setIsWicketModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('scoring'); // 'scoring' | 'scorecard'
+  const [isNewMatchModalOpen, setIsNewMatchModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('scoring'); // 'scoring' | 'scorecard' | 'teams'
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   // 1. Initial Load: Fetch matches
-  useEffect(() => {
-    async function loadInitial() {
-      try {
-        setLoading(true);
-        const matchData = await api.getMatches();
-        setMatches(matchData);
-        if (matchData.length > 0) {
-          setSelectedMatchId(matchData[0].id);
-        }
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+  const loadMatches = async () => {
+    try {
+      setLoading(true);
+      const matchData = await api.getMatches();
+      setMatches(matchData);
+      if (matchData.length > 0 && !selectedMatchId) {
+        setSelectedMatchId(matchData[0].id);
       }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
-    loadInitial();
+  };
+
+  useEffect(() => {
+    loadMatches();
   }, []);
 
   // 2. Load Selected Match, Innings, Players, and Deliveries
@@ -65,7 +69,6 @@ export default function App() {
         // Check for innings (fetch 1st innings or latest)
         let inn = null;
         try {
-          // If match has innings, fetch latest
           const mScorecard = await api.getMatchScorecard(selectedMatchId);
           if (mScorecard.innings && mScorecard.innings.length > 0) {
             const latestInnId = mScorecard.innings[mScorecard.innings.length - 1].innings_id;
@@ -201,6 +204,13 @@ export default function App() {
     }
   };
 
+  // 6. Handle New Match Created
+  const handleNewMatchCreated = async (newMatchId) => {
+    await loadMatches();
+    setSelectedMatchId(newMatchId);
+    setActiveTab('scoring');
+  };
+
   return (
     <div className="app-container">
       {/* Top Navbar */}
@@ -211,20 +221,30 @@ export default function App() {
         </div>
 
         <div className="nav-controls">
-          <label className="match-picker-label">
-            Match:
-            <select
-              value={selectedMatchId || ''}
-              onChange={(e) => setSelectedMatchId(Number(e.target.value))}
-              className="match-select"
-            >
-              {matches.map((m) => (
-                <option key={m.id} value={m.id}>
-                  #{m.id} {m.team1?.short_name} vs {m.team2?.short_name} ({m.format})
-                </option>
-              ))}
-            </select>
-          </label>
+          {matches.length > 0 && (
+            <label className="match-picker-label">
+              Match:
+              <select
+                value={selectedMatchId || ''}
+                onChange={(e) => setSelectedMatchId(Number(e.target.value))}
+                className="match-select"
+              >
+                {matches.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    #{m.id} {m.team1?.short_name} vs {m.team2?.short_name} ({m.format})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          <button
+            type="button"
+            className="btn btn-new-match"
+            onClick={() => setIsNewMatchModalOpen(true)}
+          >
+            + New Match
+          </button>
 
           <div className="tab-buttons">
             <button
@@ -241,6 +261,13 @@ export default function App() {
             >
               Scorecard
             </button>
+            <button
+              type="button"
+              className={`tab-btn ${activeTab === 'teams' ? 'active' : ''}`}
+              onClick={() => setActiveTab('teams')}
+            >
+              Teams & Players
+            </button>
           </div>
         </div>
       </header>
@@ -253,12 +280,23 @@ export default function App() {
         </div>
       )}
 
-      {loading ? (
+      {/* Main Content Area */}
+      {activeTab === 'teams' ? (
+        <TeamsPlayersView />
+      ) : loading ? (
         <div className="loading-state">Loading match data...</div>
       ) : !innings ? (
         <div className="empty-state">
           <h3>No Active Innings</h3>
           <p>This match has not started an innings yet.</p>
+          <button
+            type="button"
+            className="btn btn-brand"
+            style={{ marginTop: '12px' }}
+            onClick={() => setIsNewMatchModalOpen(true)}
+          >
+            Start New Match
+          </button>
         </div>
       ) : (
         <main className="main-content">
@@ -316,6 +354,13 @@ export default function App() {
           />
         </main>
       )}
+
+      {/* New Match Modal */}
+      <NewMatchModal
+        isOpen={isNewMatchModalOpen}
+        onClose={() => setIsNewMatchModalOpen(false)}
+        onMatchCreated={handleNewMatchCreated}
+      />
     </div>
   );
 }
