@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db.models import Delivery, Innings, Match, MatchPlayer, Wicket
-from app.db.models.enums import InningsStatus, MatchStatus
+from app.db.models.enums import InningsStatus, MatchFormat, MatchStatus, ResultType
 from app.schemas.delivery import DeliveryCreate, DeliveryRead, ScoringStateResponse
 from app.schemas.innings import InningsCreate
 from app.services.match import CONSTRAINT_ERROR_MESSAGES, constraint_name
@@ -262,8 +262,26 @@ def record_delivery(
 
     if all_out or overs_exhausted or target_chased:
         innings.status = InningsStatus.COMPLETED
-        db.commit()
         is_innings_complete = True
+
+        # If 2nd innings is complete, determine the match outcome
+        if innings.innings_number == 2:
+            match = db.get(Match, innings.match_id)
+            if match and match.status != MatchStatus.COMPLETED:
+                match.status = MatchStatus.COMPLETED
+                if innings.target_runs is not None:
+                    first_inns_runs = innings.target_runs - 1
+                    if current_score >= innings.target_runs:
+                        match.winner_team_id = innings.batting_team_id
+                        match.result_type = ResultType.WIN
+                    elif current_score < first_inns_runs:
+                        match.winner_team_id = innings.bowling_team_id
+                        match.result_type = ResultType.WIN
+                    else:
+                        match.winner_team_id = None
+                        match.result_type = ResultType.TIE
+
+        db.commit()
 
     display_overs = f"{new_legal_balls // 6}.{new_legal_balls % 6}"
 
@@ -304,9 +322,78 @@ def undo_last_delivery(db: Session, innings_id: int) -> DeliveryRead:
     # If innings was marked completed, reopen it
     if innings.status == InningsStatus.COMPLETED:
         innings.status = InningsStatus.IN_PROGRESS
+        match = db.get(Match, innings.match_id)
+        if match and match.status == MatchStatus.COMPLETED:
+            match.status = MatchStatus.LIVE
+            match.winner_team_id = None
+            match.result_type = None
 
     db.commit()
     return undone
+
+
+def start_next_innings(db: Session, match_id: int) -> Innings:
+    """Start the next innings of a match based on the completed previous innings."""
+    match = db.get(Match, match_id)
+    if match is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No match with id {match_id}",
+        )
+
+    existing_innings = list(
+        db.scalars(
+            select(Innings)
+            .where(Innings.match_id == match_id)
+            .order_by(Innings.innings_number.asc())
+        )
+    )
+    if not existing_innings:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot start next innings: no previous innings exists",
+        )
+
+    last_inn = existing_innings[-1]
+    if last_inn.status != InningsStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Innings {last_inn.innings_number} is still in progress",
+        )
+
+    max_allowed = 2 if match.format != MatchFormat.TEST else 4
+    if last_inn.innings_number >= max_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Match has already reached the maximum {max_allowed} innings for format {match.format.value}",
+        )
+
+    next_number = last_inn.innings_number + 1
+
+    # Swap batting and bowling teams
+    batting_team_id = last_inn.bowling_team_id
+    bowling_team_id = last_inn.batting_team_id
+
+    # Calculate target runs from 1st innings total
+    prev_runs = db.scalar(
+        select(func.coalesce(func.sum(Delivery.total_runs), 0)).where(
+            Delivery.innings_id == last_inn.id
+        )
+    ) or 0
+    target_runs = (prev_runs + 1) if next_number == 2 else None
+
+    next_inn = Innings(
+        match_id=match_id,
+        innings_number=next_number,
+        batting_team_id=batting_team_id,
+        bowling_team_id=bowling_team_id,
+        max_overs=last_inn.max_overs or match.total_overs,
+        target_runs=target_runs,
+        status=InningsStatus.IN_PROGRESS,
+    )
+    db.add(next_inn)
+    db.commit()
+    return get_innings_or_404(db, next_inn.id)
 
 
 def list_deliveries(

@@ -16,6 +16,7 @@ export default function App() {
   const [match, setMatch] = useState(null);
   const [innings, setInnings] = useState(null);
   const [scorecard, setScorecard] = useState(null);
+  const [matchSummary, setMatchSummary] = useState(null);
   const [deliveries, setDeliveries] = useState([]);
 
   const [battingSquad, setBattingSquad] = useState([]);
@@ -70,6 +71,7 @@ export default function App() {
         let inn = null;
         try {
           const mScorecard = await api.getMatchScorecard(selectedMatchId);
+          setMatchSummary(mScorecard.summary_text);
           if (mScorecard.innings && mScorecard.innings.length > 0) {
             const latestInnId = mScorecard.innings[mScorecard.innings.length - 1].innings_id;
             inn = await api.getInnings(latestInnId);
@@ -122,12 +124,16 @@ export default function App() {
   // Refresh current innings data (scorecard + deliveries)
   const refreshInningsData = async (innId) => {
     try {
-      const [sc, delivs] = await Promise.all([
+      const [sc, delivs, mScorecard, m] = await Promise.all([
         api.getInningsScorecard(innId),
         api.getInningsDeliveries(innId),
+        api.getMatchScorecard(selectedMatchId),
+        api.getMatch(selectedMatchId),
       ]);
       setScorecard(sc);
       setDeliveries(delivs);
+      setMatchSummary(mScorecard.summary_text);
+      setMatch(m);
     } catch (err) {
       setError(err.message);
     }
@@ -157,6 +163,12 @@ export default function App() {
       setIsOverComplete(res.is_over_complete);
 
       await refreshInningsData(innings.id);
+
+      // If this delivery completed the innings, refresh the full match
+      if (res.is_innings_complete) {
+        const updatedInn = await api.getInnings(innings.id);
+        setInnings(updatedInn);
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -185,6 +197,11 @@ export default function App() {
       setIsOverComplete(res.is_over_complete);
 
       await refreshInningsData(innings.id);
+
+      if (res.is_innings_complete) {
+        const updatedInn = await api.getInnings(innings.id);
+        setInnings(updatedInn);
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -198,6 +215,8 @@ export default function App() {
     try {
       setError(null);
       await api.undoLastDelivery(innings.id);
+      const updatedInn = await api.getInnings(innings.id);
+      setInnings(updatedInn);
       await refreshInningsData(innings.id);
     } catch (err) {
       setError(err.message);
@@ -209,6 +228,36 @@ export default function App() {
     await loadMatches();
     setSelectedMatchId(newMatchId);
     setActiveTab('scoring');
+  };
+
+  // 7. Start 2nd Innings
+  const handleStartNextInnings = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const nextInn = await api.startNextInnings(selectedMatchId);
+      setInnings(nextInn);
+
+      // Load squads for reversed roles
+      const batPlayers = await api.getMatchPlayers(selectedMatchId, nextInn.batting_team_id);
+      const fieldPlayers = await api.getMatchPlayers(selectedMatchId, nextInn.bowling_team_id);
+      setBattingSquad(batPlayers);
+      setFieldingSquad(fieldPlayers);
+
+      if (batPlayers.length >= 2) {
+        setStrikerId(batPlayers[0].player_id);
+        setNonStrikerId(batPlayers[1].player_id);
+      }
+      if (fieldPlayers.length >= 1) {
+        setBowlerId(fieldPlayers[0].player_id);
+      }
+
+      await refreshInningsData(nextInn.id);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -301,41 +350,79 @@ export default function App() {
       ) : (
         <main className="main-content">
           {/* Main Score Banner */}
-          <ScoreBanner match={match} innings={innings} scorecard={scorecard} />
+          <ScoreBanner
+            match={match}
+            innings={innings}
+            scorecard={scorecard}
+            matchSummary={matchSummary}
+          />
 
           {activeTab === 'scoring' ? (
             <div className="scoring-screen">
-              {/* Batters & Bowler Active HUD */}
-              <BattersBowlerHUD
-                strikerId={strikerId}
-                nonStrikerId={nonStrikerId}
-                bowlerId={bowlerId}
-                onStrikerChange={setStrikerId}
-                onNonStrikerChange={setNonStrikerId}
-                onBowlerChange={setBowlerId}
-                battingSquad={battingSquad}
-                bowlingSquad={fieldingSquad}
-                scorecard={scorecard}
-              />
-
-              {/* Over Ticker */}
-              <OverTicker deliveries={deliveries} />
-
-              {/* Over completion notice */}
-              {isOverComplete && (
-                <div className="over-complete-alert">
-                  <span>🔔 Over completed! Change bowler for the next over.</span>
+              {/* Match Completed Card */}
+              {match?.status === 'COMPLETED' ? (
+                <div className="match-completed-card">
+                  <h3>🎉 Match Completed!</h3>
+                  <p className="winner-announcement">{matchSummary || 'Match Finished'}</p>
+                  <button
+                    type="button"
+                    className="btn btn-brand"
+                    onClick={() => setActiveTab('scorecard')}
+                  >
+                    View Match Scorecard
+                  </button>
                 </div>
-              )}
+              ) : innings.status === 'COMPLETED' && innings.innings_number === 1 ? (
+                /* Innings Break Card */
+                <div className="innings-break-card">
+                  <h3>⏸️ Innings 1 Complete!</h3>
+                  <p>
+                    {innings.batting_team?.name} posted <strong>{scorecard?.total_runs}</strong> runs.
+                    Target for {innings.bowling_team?.name}: <strong>{(scorecard?.total_runs || 0) + 1}</strong> runs.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-brand btn-large"
+                    onClick={handleStartNextInnings}
+                  >
+                    ▶️ Start 2nd Innings
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Batters & Bowler Active HUD */}
+                  <BattersBowlerHUD
+                    strikerId={strikerId}
+                    nonStrikerId={nonStrikerId}
+                    bowlerId={bowlerId}
+                    onStrikerChange={setStrikerId}
+                    onNonStrikerChange={setNonStrikerId}
+                    onBowlerChange={setBowlerId}
+                    battingSquad={battingSquad}
+                    bowlingSquad={fieldingSquad}
+                    scorecard={scorecard}
+                  />
 
-              {/* Fast Scoring Keypad */}
-              <ScoringKeypad
-                onScoreBall={handleScoreBall}
-                onOpenWicketModal={() => setIsWicketModalOpen(true)}
-                onUndoLastBall={handleUndo}
-                isOverComplete={isOverComplete}
-                disabled={innings.status === 'COMPLETED'}
-              />
+                  {/* Over Ticker */}
+                  <OverTicker deliveries={deliveries} />
+
+                  {/* Over completion notice */}
+                  {isOverComplete && (
+                    <div className="over-complete-alert">
+                      <span>🔔 Over completed! Change bowler for the next over.</span>
+                    </div>
+                  )}
+
+                  {/* Fast Scoring Keypad */}
+                  <ScoringKeypad
+                    onScoreBall={handleScoreBall}
+                    onOpenWicketModal={() => setIsWicketModalOpen(true)}
+                    onUndoLastBall={handleUndo}
+                    isOverComplete={isOverComplete}
+                    disabled={innings.status === 'COMPLETED'}
+                  />
+                </>
+              )}
             </div>
           ) : (
             /* Full Scorecard View */

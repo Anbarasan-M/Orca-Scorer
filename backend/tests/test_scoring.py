@@ -160,3 +160,127 @@ def test_undo_last_delivery(client):
     deliveries_after = client.get(f"/innings/{inn_id}/deliveries").json()
     assert len(deliveries_after) == 1
     assert deliveries_after[0]["runs_off_bat"] == 4
+
+
+def test_second_innings_and_match_resolution(client):
+    t1 = client.post("/teams", json={"name": "Orcas Alpha", "short_name": "OA"}).json()
+    t2 = client.post("/teams", json={"name": "Warriors Beta", "short_name": "WB"}).json()
+
+    b1 = client.post("/players", json={"name": "Alpha One"}).json()
+    b2 = client.post("/players", json={"name": "Alpha Two"}).json()
+    client.post(f"/teams/{t1['id']}/squad", json={"player_id": b1["id"]})
+    client.post(f"/teams/{t1['id']}/squad", json={"player_id": b2["id"]})
+
+    bowler = client.post("/players", json={"name": "Beta Bowler"}).json()
+    fielder = client.post("/players", json={"name": "Beta Fielder"}).json()
+    client.post(f"/teams/{t2['id']}/squad", json={"player_id": bowler["id"]})
+    client.post(f"/teams/{t2['id']}/squad", json={"player_id": fielder["id"]})
+
+    match = client.post(
+        "/matches",
+        json={
+            "team1_id": t1["id"],
+            "team2_id": t2["id"],
+            "match_date": datetime.now(timezone.utc).isoformat(),
+            "format": "CUSTOM",
+            "total_overs": 1,
+        },
+    ).json()
+
+    client.post(
+        f"/matches/{match['id']}/players",
+        json={
+            "team_id": t1["id"],
+            "players": [
+                {"player_id": b1["id"], "batting_position": 1},
+                {"player_id": b2["id"], "batting_position": 2},
+            ],
+        },
+    )
+    client.post(
+        f"/matches/{match['id']}/players",
+        json={
+            "team_id": t2["id"],
+            "players": [
+                {"player_id": bowler["id"], "batting_position": 1},
+                {"player_id": fielder["id"], "batting_position": 2},
+            ],
+        },
+    )
+
+    # Start 1-over innings 1
+    inn1 = client.post(
+        "/innings",
+        json={
+            "match_id": match["id"],
+            "innings_number": 1,
+            "batting_team_id": t1["id"],
+            "bowling_team_id": t2["id"],
+            "max_overs": 1,
+        },
+    ).json()
+
+    inn1_id = inn1["id"]
+    match_id = match["id"]
+
+    # Bowl 6 legal balls in Innings 1 (6 singles = 6 runs)
+    for _ in range(6):
+        client.post(
+            f"/innings/{inn1_id}/deliveries",
+            json={
+                "batter_id": b1["id"],
+                "non_striker_id": b2["id"],
+                "bowler_id": bowler["id"],
+                "runs_off_bat": 1,
+            },
+        )
+
+    # Innings 1 should be completed after 1 over (6 balls)
+    inn1_check = client.get(f"/innings/{inn1_id}").json()
+    assert inn1_check["status"] == "COMPLETED"
+
+    # Start Innings 2 via next innings endpoint
+    next_res = client.post(f"/matches/{match_id}/innings/next")
+    assert next_res.status_code == 201
+    inn2 = next_res.json()
+    assert inn2["innings_number"] == 2
+    assert inn2["target_runs"] == 7  # 6 runs + 1
+    assert inn2["batting_team_id"] == t2["id"]
+
+    # Team 2 bats: hits a six and a two (8 runs total -> target 7 chased!)
+    client.post(
+        f"/innings/{inn2['id']}/deliveries",
+        json={
+            "batter_id": bowler["id"],
+            "non_striker_id": fielder["id"],
+            "bowler_id": b1["id"],
+            "runs_off_bat": 6,
+        },
+    )
+    r_win = client.post(
+        f"/innings/{inn2['id']}/deliveries",
+        json={
+            "batter_id": bowler["id"],
+            "non_striker_id": fielder["id"],
+            "bowler_id": b1["id"],
+            "runs_off_bat": 2,
+        },
+    ).json()
+
+    assert r_win["is_innings_complete"] is True
+
+    # Verify match completed & winner resolved!
+    match_data = client.get(f"/matches/{match_id}").json()
+    assert match_data["status"] == "COMPLETED"
+    assert match_data["result_type"] == "WIN"
+    assert match_data["winner_team_id"] == t2["id"]
+
+    # Verify scorecard summary
+    scorecard = client.get(f"/matches/{match_id}/scorecard").json()
+    assert "won by" in scorecard["summary_text"].lower()
+
+    # Test Undo reverts match back to LIVE!
+    client.delete(f"/innings/{inn2['id']}/deliveries/last")
+    match_reopened = client.get(f"/matches/{match_id}").json()
+    assert match_reopened["status"] == "LIVE"
+    assert match_reopened["winner_team_id"] is None

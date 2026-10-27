@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.models import Match, MatchPlayer
 from app.db.models.enums import MatchStatus
 from app.db.session import get_db
+from app.schemas.innings import InningsRead
 from app.schemas.match import (
     MatchCreate,
     MatchPlayerRead,
@@ -16,6 +17,7 @@ from app.schemas.match import (
 from app.schemas.scorecard import MatchScorecard
 from app.services import match as match_service
 from app.services import scorecard as scorecard_service
+from app.services import scoring as scoring_service
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -91,3 +93,15 @@ def get_match_scorecard(
 ) -> MatchScorecard:
     """Get complete scorecard for all innings in a match."""
     return scorecard_service.get_match_scorecard(db, match_id)
+
+
+@router.post(
+    "/{match_id}/innings/next",
+    response_model=InningsRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def start_next_innings(
+    match_id: int, db: Session = Depends(get_db)
+):
+    """Start the next innings of a match based on the completed previous innings."""
+    return scoring_service.start_next_innings(db, match_id)

@@ -9,7 +9,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, aliased
 
 from app.db.models import Delivery, Innings, Match, Player, Wicket
-from app.db.models.enums import InningsStatus, WicketType
+from app.db.models.enums import InningsStatus, MatchStatus, ResultType, WicketType
 from app.schemas.match import MatchRead, TeamSummary
 from app.schemas.scorecard import (
     BattingEntry,
@@ -273,8 +273,18 @@ def get_match_scorecard(db: Session, match_id: int) -> MatchScorecard:
     ]
 
     summary = None
-    if match.result_type and match.status == InningsStatus.COMPLETED:
-        if match.winner_team:
+    if match.result_type and match.status == MatchStatus.COMPLETED:
+        if match.result_type == ResultType.TIE:
+            summary = "Match tied"
+        elif match.winner_team and len(innings_scorecards) >= 2:
+            inn1, inn2 = innings_scorecards[0], innings_scorecards[1]
+            if match.winner_team_id == inn2.batting_team.id:
+                wkts_left = max(1, 10 - inn2.wickets_lost)
+                summary = f"{match.winner_team.name} won by {wkts_left} wicket{'s' if wkts_left > 1 else ''}"
+            else:
+                runs_diff = inn1.total_runs - inn2.total_runs
+                summary = f"{match.winner_team.name} won by {runs_diff} run{'s' if runs_diff > 1 else ''}"
+        elif match.winner_team:
             summary = f"{match.winner_team.name} won"
         else:
             summary = f"Match ended in a {match.result_type.value.lower()}"

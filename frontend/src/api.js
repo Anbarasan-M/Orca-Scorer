@@ -128,6 +128,13 @@ export const api = {
     return handleResponse(res);
   },
 
+  startNextInnings: async (matchId) => {
+    const res = await fetch(`/matches/${matchId}/innings/next`, {
+      method: 'POST',
+    });
+    return handleResponse(res);
+  },
+
   getInningsDeliveries: async (inningsId) => {
     const res = await fetch(`/innings/${inningsId}/deliveries?limit=300`);
     return handleResponse(res);

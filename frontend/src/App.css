@@ -188,6 +188,74 @@
   color: var(--text-muted);
 }
 
+.innings-badge {
+  background-color: var(--bg-tertiary);
+  color: var(--text-main);
+}
+
+.match-result-banner {
+  background: linear-gradient(90deg, #1e3a8a 0%, #1e40af 100%);
+  border: 1px solid #3b82f6;
+  color: #eff6ff;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+}
+
+.chase-equation {
+  background-color: rgba(30, 41, 59, 0.8);
+  border: 1px dashed var(--color-brand);
+  color: #93c5fd;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.highlight-pill {
+  border-color: var(--color-warning);
+}
+.highlight-pill .stat-label {
+  color: var(--color-warning);
+}
+
+/* --- Innings Break & Match Finished Cards --- */
+.innings-break-card, .match-completed-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 32px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.innings-break-card h3 {
+  font-size: 1.4rem;
+  color: #fde68a;
+}
+
+.match-completed-card h3 {
+  font-size: 1.5rem;
+  color: #6ee7b7;
+}
+
+.winner-announcement {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.btn-large {
+  padding: 12px 28px;
+  font-size: 1rem;
+}
+
 .banner-main {
   display: flex;
   justify-content: space-between;
