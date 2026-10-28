@@ -3,7 +3,17 @@ import React from 'react';
 export default function ScorecardView({ scorecard }) {
   if (!scorecard) return <div className="loading">Loading scorecard...</div>;
 
-  const { batting = [], bowling = [], extras = {}, total_runs, wickets_lost, overs, run_rate } = scorecard;
+  const {
+    batting = [],
+    bowling = [],
+    extras = {},
+    total_runs,
+    wickets_lost,
+    overs,
+    run_rate,
+    fall_of_wickets = [],
+    current_partnership,
+  } = scorecard;
 
   return (
     <div className="scorecard-container">
@@ -51,6 +61,36 @@ export default function ScorecardView({ scorecard }) {
           <strong>Extras:</strong> {extras.total || 0} (b {extras.byes || 0}, lb {extras.leg_byes || 0}, w {extras.wides || 0}, nb {extras.no_balls || 0})
         </span>
       </div>
+
+      {/* Fall of Wickets */}
+      {fall_of_wickets && fall_of_wickets.length > 0 && (
+        <div className="fow-box">
+          <div className="fow-title">Fall of Wickets</div>
+          <div className="fow-list">
+            {fall_of_wickets.map((f, i) => (
+              <span key={f.wicket_number} className="fow-item">
+                <strong>{f.score}-{f.wicket_number}</strong> ({f.player_name}, {f.overs} ov)
+                {i < fall_of_wickets.length - 1 && <span className="fow-sep">, </span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Active Partnership */}
+      {current_partnership && (
+        <div className="partnership-summary-box">
+          <span className="partnership-title">🤝 Current Partnership:</span>
+          <span className="partnership-value">
+            <strong>{current_partnership.runs}</strong> runs ({current_partnership.balls} balls)
+          </span>
+          {current_partnership.batter1 && current_partnership.batter2 && (
+            <span className="partnership-players">
+              — {current_partnership.batter1.player_name}: {current_partnership.batter1.runs} ({current_partnership.batter1.balls}), {current_partnership.batter2.player_name}: {current_partnership.batter2.runs} ({current_partnership.batter2.balls})
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Bowling Table */}
       <div className="table-responsive">

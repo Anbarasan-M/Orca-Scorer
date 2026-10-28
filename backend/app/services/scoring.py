@@ -5,10 +5,11 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.db.models import Delivery, Innings, Match, MatchPlayer, Wicket
+from app.db.models import Delivery, Innings, Match, MatchPlayer, Player, Wicket
 from app.db.models.enums import InningsStatus, MatchFormat, MatchStatus, ResultType
 from app.schemas.delivery import DeliveryCreate, DeliveryRead, ScoringStateResponse
 from app.schemas.innings import InningsCreate
+from app.schemas.scorecard import CurrentPartnership, PartnershipBatter
 from app.services.match import CONSTRAINT_ERROR_MESSAGES, constraint_name
 
 
@@ -285,6 +286,10 @@ def record_delivery(
 
     display_overs = f"{new_legal_balls // 6}.{new_legal_balls % 6}"
 
+    partnership = None
+    if not all_out:
+        partnership = compute_current_partnership(db, innings_id, next_striker, next_non_striker)
+
     return ScoringStateResponse(
         delivery=DeliveryRead.model_validate(saved_delivery),
         next_striker_id=next_striker,
@@ -294,6 +299,111 @@ def record_delivery(
         current_score=current_score,
         current_wickets=current_wickets,
         overs_completed_display=display_overs,
+        current_partnership=partnership,
+    )
+
+
+def compute_current_partnership(
+    db: Session,
+    innings_id: int,
+    striker_id: int | None = None,
+    non_striker_id: int | None = None,
+) -> CurrentPartnership | None:
+    """Calculate active partnership runs, balls, and batter breakdowns since the last wicket."""
+    last_wicket_seq = db.scalar(
+        select(func.coalesce(func.max(Delivery.ball_seq), 0))
+        .join(Wicket, Wicket.delivery_id == Delivery.id)
+        .where(Delivery.innings_id == innings_id)
+    ) or 0
+
+    p_runs, p_balls = db.execute(
+        select(
+            func.coalesce(func.sum(Delivery.total_runs), 0),
+            func.count().filter(Delivery.counts_as_ball_faced),
+        ).where(
+            Delivery.innings_id == innings_id,
+            Delivery.ball_seq > last_wicket_seq,
+        )
+    ).one()
+
+    # If batter IDs not explicitly given, derive from the latest delivery
+    if striker_id is None and non_striker_id is None:
+        latest_delivery = db.scalar(
+            select(Delivery)
+            .where(Delivery.innings_id == innings_id)
+            .order_by(Delivery.ball_seq.desc())
+            .limit(1)
+        )
+        if latest_delivery is None:
+            return None
+
+        if latest_delivery.ball_seq == last_wicket_seq:
+            # Wicket fell on the latest delivery: look for surviving batter
+            out_ids = set(
+                db.scalars(
+                    select(Wicket.player_out_id).where(Wicket.delivery_id == latest_delivery.id)
+                ).all()
+            )
+            striker_id = (
+                latest_delivery.batter_id
+                if latest_delivery.batter_id not in out_ids
+                else (latest_delivery.non_striker_id if latest_delivery.non_striker_id not in out_ids else None)
+            )
+            non_striker_id = None
+        else:
+            striker_id = latest_delivery.batter_id
+            non_striker_id = latest_delivery.non_striker_id
+
+    batter_ids = [b for b in (striker_id, non_striker_id) if b is not None]
+    if not batter_ids and p_balls == 0 and p_runs == 0:
+        return None
+
+    batter_stats_map: dict[int, tuple[int, int]] = {}
+    if batter_ids:
+        stats_rows = db.execute(
+            select(
+                Delivery.batter_id,
+                func.coalesce(func.sum(Delivery.runs_off_bat), 0).label("runs"),
+                func.count().filter(Delivery.counts_as_ball_faced).label("balls"),
+            )
+            .where(
+                Delivery.innings_id == innings_id,
+                Delivery.ball_seq > last_wicket_seq,
+                Delivery.batter_id.in_(batter_ids),
+            )
+            .group_by(Delivery.batter_id)
+        ).all()
+        for row in stats_rows:
+            batter_stats_map[row.batter_id] = (row.runs, row.balls)
+
+    players = db.scalars(select(Player).where(Player.id.in_(batter_ids))).all() if batter_ids else []
+    name_map = {p.id: p.name for p in players}
+
+    b1_entry = None
+    if striker_id is not None:
+        r, b = batter_stats_map.get(striker_id, (0, 0))
+        b1_entry = PartnershipBatter(
+            player_id=striker_id,
+            player_name=name_map.get(striker_id, f"Player {striker_id}"),
+            runs=r,
+            balls=b,
+        )
+
+    b2_entry = None
+    if non_striker_id is not None:
+        r, b = batter_stats_map.get(non_striker_id, (0, 0))
+        b2_entry = PartnershipBatter(
+            player_id=non_striker_id,
+            player_name=name_map.get(non_striker_id, f"Player {non_striker_id}"),
+            runs=r,
+            balls=b,
+        )
+
+    return CurrentPartnership(
+        runs=p_runs,
+        balls=p_balls,
+        batter1=b1_entry,
+        batter2=b2_entry,
     )
 
 

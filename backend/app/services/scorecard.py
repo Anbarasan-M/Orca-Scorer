@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, aliased
 
-from app.db.models import Delivery, Innings, Match, Player, Wicket
+from app.db.models import Delivery, Innings, Match, MatchPlayer, Player, Wicket
 from app.db.models.enums import InningsStatus, MatchStatus, ResultType, WicketType
 from app.schemas.match import MatchRead, TeamSummary
 from app.schemas.scorecard import (
@@ -17,13 +17,14 @@ from app.schemas.scorecard import (
     BowlingEntry,
     BowlingStats,
     ExtrasBreakdown,
+    FallOfWicketEntry,
     FieldingStats,
     InningsScorecard,
     MatchScorecard,
     PlayerStatistics,
 )
 from app.services.match import get_match_or_404
-from app.services.scoring import get_innings_or_404
+from app.services.scoring import compute_current_partnership, get_innings_or_404
 
 
 def _format_dismissal(
@@ -240,6 +241,22 @@ def get_innings_scorecard(db: Session, innings_id: int) -> InningsScorecard:
     overs_float = (legal_balls // 6) + ((legal_balls % 6) / 6)
     run_rate = round((total_runs / overs_float), 2) if overs_float > 0 else 0.0
 
+    fall_of_wickets = _compute_fall_of_wickets(db, innings_id)
+
+    # Determine active partnership
+    roster_count = db.scalar(
+        select(func.count(MatchPlayer.id)).where(
+            MatchPlayer.match_id == innings.match_id,
+            MatchPlayer.team_id == innings.batting_team_id,
+        )
+    ) or 11
+    max_wickets = max(1, roster_count - 1)
+
+    if innings.status == InningsStatus.COMPLETED and wickets_lost >= max_wickets:
+        current_partnership = None
+    else:
+        current_partnership = compute_current_partnership(db, innings_id)
+
     return InningsScorecard(
         innings_id=innings.id,
         innings_number=innings.innings_number,
@@ -253,7 +270,58 @@ def get_innings_scorecard(db: Session, innings_id: int) -> InningsScorecard:
         batting=batting_entries,
         bowling=bowling_entries,
         extras=extras,
+        fall_of_wickets=fall_of_wickets,
+        current_partnership=current_partnership,
     )
+
+
+def _compute_fall_of_wickets(db: Session, innings_id: int) -> list[FallOfWicketEntry]:
+    """Calculate the fall of wickets list in sequence with team score and overs."""
+    wicket_rows = db.execute(
+        select(
+            Wicket.id,
+            Wicket.player_out_id,
+            Player.name.label("player_name"),
+            Delivery.ball_seq,
+        )
+        .join(Delivery, Delivery.id == Wicket.delivery_id)
+        .join(Player, Player.id == Wicket.player_out_id)
+        .where(Delivery.innings_id == innings_id)
+        .order_by(Delivery.ball_seq, Wicket.id)
+    ).all()
+
+    if not wicket_rows:
+        return []
+
+    delivery_rows = db.execute(
+        select(Delivery.ball_seq, Delivery.total_runs, Delivery.is_legal)
+        .where(Delivery.innings_id == innings_id)
+        .order_by(Delivery.ball_seq)
+    ).all()
+
+    cum_score = 0
+    cum_legal = 0
+    stats_at_seq: dict[int, tuple[int, int]] = {}
+    for d in delivery_rows:
+        cum_score += d.total_runs
+        if d.is_legal:
+            cum_legal += 1
+        stats_at_seq[d.ball_seq] = (cum_score, cum_legal)
+
+    fow_entries = []
+    for idx, w in enumerate(wicket_rows, start=1):
+        score, legal = stats_at_seq.get(w.ball_seq, (0, 0))
+        overs_str = f"{legal // 6}.{legal % 6}"
+        fow_entries.append(
+            FallOfWicketEntry(
+                wicket_number=idx,
+                score=score,
+                overs=overs_str,
+                player_id=w.player_out_id,
+                player_name=w.player_name,
+            )
+        )
+    return fow_entries
 
 
 def get_match_scorecard(db: Session, match_id: int) -> MatchScorecard:

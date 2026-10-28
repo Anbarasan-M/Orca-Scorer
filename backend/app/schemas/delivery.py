@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.db.models.enums import FIELDER_REQUIRED_WICKETS, WicketType
 from app.schemas.match import PlayerSummary
+from app.schemas.scorecard import CurrentPartnership
 
 
 class WicketCreate(BaseModel):
@@ -147,3 +148,6 @@ class ScoringStateResponse(BaseModel):
     current_score: int = Field(description="Total runs scored in this innings so far")
     current_wickets: int = Field(description="Total wickets lost in this innings so far")
     overs_completed_display: str = Field(description="Formatted over display, e.g. '4.3'")
+    current_partnership: CurrentPartnership | None = Field(
+        default=None, description="Active partnership between current batters"
+    )

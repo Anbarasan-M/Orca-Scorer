@@ -46,6 +46,34 @@ class ExtrasBreakdown(BaseModel):
     total: int = 0
 
 
+class FallOfWicketEntry(BaseModel):
+    """Fall of a single wicket in an innings."""
+
+    wicket_number: int = Field(description="1 for 1st wicket, 2 for 2nd...")
+    score: int = Field(description="Team score when wicket fell")
+    overs: str = Field(description="Over display when wicket fell (e.g. '1.4')")
+    player_id: int
+    player_name: str
+
+
+class PartnershipBatter(BaseModel):
+    """One batter's contribution to an active partnership."""
+
+    player_id: int
+    player_name: str
+    runs: int = 0
+    balls: int = 0
+
+
+class CurrentPartnership(BaseModel):
+    """Active partnership between the two batters at the crease."""
+
+    runs: int = 0
+    balls: int = 0
+    batter1: PartnershipBatter | None = None
+    batter2: PartnershipBatter | None = None
+
+
 class InningsScorecard(BaseModel):
     """Full scorecard for one innings."""
 
@@ -61,6 +89,8 @@ class InningsScorecard(BaseModel):
     batting: list[BattingEntry]
     bowling: list[BowlingEntry]
     extras: ExtrasBreakdown
+    fall_of_wickets: list[FallOfWicketEntry] = []
+    current_partnership: CurrentPartnership | None = None
 
 
 class MatchScorecard(BaseModel):

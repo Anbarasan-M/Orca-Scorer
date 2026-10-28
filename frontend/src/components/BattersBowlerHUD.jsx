@@ -99,6 +99,21 @@ export default function BattersBowlerHUD({
             </span>
           </div>
         </div>
+
+        {/* Active Partnership Badge */}
+        {scorecard?.current_partnership && (
+          <div className="partnership-badge">
+            <span className="partnership-label">🤝 Partnership:</span>
+            <span className="partnership-highlight">
+              <strong>{scorecard.current_partnership.runs}</strong> runs ({scorecard.current_partnership.balls}b)
+            </span>
+            {scorecard.current_partnership.batter1 && scorecard.current_partnership.batter2 && (
+              <span className="partnership-breakdown">
+                ({scorecard.current_partnership.batter1.player_name?.split(' ')[0]}: {scorecard.current_partnership.batter1.runs}, {scorecard.current_partnership.batter2.player_name?.split(' ')[0]}: {scorecard.current_partnership.batter2.runs})
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bowler Box */}

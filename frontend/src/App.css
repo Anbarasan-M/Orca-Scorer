@@ -1025,3 +1025,89 @@
   background-color: var(--color-danger);
   color: white;
 }
+
+/* --- Active Partnership & Fall of Wickets --- */
+.partnership-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: rgba(59, 130, 246, 0.08);
+  border: 1px dashed rgba(59, 130, 246, 0.35);
+  border-radius: 8px;
+  padding: 6px 12px;
+  margin-top: 10px;
+  font-size: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.partnership-label {
+  font-weight: 600;
+  color: var(--color-brand);
+}
+
+.partnership-highlight {
+  color: var(--text-main);
+}
+
+.partnership-breakdown {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.fow-box {
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.fow-title {
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.5px;
+}
+
+.fow-list {
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.fow-item strong {
+  color: var(--color-danger);
+}
+
+.fow-sep {
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+
+.partnership-summary-box {
+  background-color: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.partnership-title {
+  font-weight: 700;
+  color: #10b981;
+}
+
+.partnership-value {
+  color: var(--text-main);
+}
+
+.partnership-players {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
