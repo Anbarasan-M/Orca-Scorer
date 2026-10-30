@@ -31,6 +31,16 @@ export default function App() {
   const [isWicketModalOpen, setIsWicketModalOpen] = useState(false);
   const [isNewMatchModalOpen, setIsNewMatchModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('scoring'); // 'scoring' | 'scorecard' | 'teams'
+  const [theme, setTheme] = useState(() => localStorage.getItem('orca_theme') || 'dark');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('orca_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -165,6 +175,11 @@ export default function App() {
       if (res.next_non_striker_id) setNonStrikerId(res.next_non_striker_id);
       setIsOverComplete(res.is_over_complete);
 
+      // If the over completed, reset bowler selection so user is prompted to pick a new bowler
+      if (res.is_over_complete) {
+        setBowlerId(null);
+      }
+
       await refreshInningsData(innings.id);
 
       // If this delivery completed the innings, refresh the full match
@@ -292,6 +307,15 @@ export default function App() {
 
           <button
             type="button"
+            className="btn-theme-toggle"
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
+            onClick={toggleTheme}
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
+
+          <button
+            type="button"
             className="btn btn-new-match"
             onClick={() => setIsNewMatchModalOpen(true)}
           >
@@ -404,6 +428,8 @@ export default function App() {
                     battingSquad={battingSquad}
                     bowlingSquad={fieldingSquad}
                     scorecard={scorecard}
+                    deliveries={deliveries}
+                    maxOvers={innings?.max_overs}
                   />
 
                   {/* Over Ticker */}

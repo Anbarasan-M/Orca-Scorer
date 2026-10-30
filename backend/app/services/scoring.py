@@ -160,6 +160,51 @@ def record_delivery(
     over_number = (legal_balls_so_far // 6) + 1
     ball_number = (legal_balls_so_far % 6) + 1
 
+    # MCC Law 17.6: Bowler cannot bowl two consecutive overs in the same innings
+    if over_number > 1:
+        prev_over_bowler_id = db.scalar(
+            select(Delivery.bowler_id)
+            .where(Delivery.innings_id == innings_id, Delivery.over_number == over_number - 1)
+            .limit(1)
+        )
+        if prev_over_bowler_id is not None and payload.bowler_id == prev_over_bowler_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A bowler cannot bowl two consecutive overs (MCC Law 17.6).",
+            )
+
+    # Maximum overs quota in limited-overs matches (max 20% of innings total overs, e.g. 4 in T20, 10 in ODI)
+    if innings.max_overs is not None:
+        max_quota = max(1, (innings.max_overs + 4) // 5)
+        # Check how many legal balls this bowler has already bowled in completed/active overs
+        bowler_legal_balls = db.scalar(
+            select(func.count())
+            .select_from(Delivery)
+            .where(
+                Delivery.innings_id == innings_id,
+                Delivery.bowler_id == payload.bowler_id,
+                Delivery.is_legal.is_(True),
+            )
+        ) or 0
+        bowler_overs_bowled = bowler_legal_balls // 6
+        # If bowler already bowled max_quota full overs and is starting a new over
+        if bowler_overs_bowled >= max_quota and (bowler_legal_balls % 6 == 0):
+            # Only block if this ball would start an over beyond the quota
+            current_over_bowled_by_this = db.scalar(
+                select(func.count())
+                .select_from(Delivery)
+                .where(
+                    Delivery.innings_id == innings_id,
+                    Delivery.over_number == over_number,
+                    Delivery.bowler_id == payload.bowler_id,
+                )
+            ) or 0
+            if current_over_bowled_by_this == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Bowler has already bowled their maximum quota of {max_quota} overs for this match.",
+                )
+
     # Insert delivery
     delivery = Delivery(
         innings_id=innings_id,

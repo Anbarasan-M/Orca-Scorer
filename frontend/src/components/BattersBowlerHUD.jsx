@@ -11,8 +11,32 @@ export default function BattersBowlerHUD({
   battingSquad,
   bowlingSquad,
   scorecard,
+  deliveries = [],
+  maxOvers = null,
 }) {
   const [inspectingPlayerId, setInspectingPlayerId] = useState(null);
+
+  // Determine previous over's bowler (cannot bowl consecutive overs)
+  let lastOverBowlerId = null;
+  if (deliveries && deliveries.length > 0) {
+    const latestDelivery = deliveries[deliveries.length - 1];
+    const currentOverNum = latestDelivery.over_number;
+    const legalBallsInCurrentOver = deliveries.filter(
+      (d) => d.over_number === currentOverNum && d.is_legal
+    ).length;
+
+    if (legalBallsInCurrentOver === 6) {
+      // Over just finished: this latest bowler cannot bowl the NEXT over
+      lastOverBowlerId = latestDelivery.bowler_id;
+    } else if (currentOverNum > 1 && legalBallsInCurrentOver === 0) {
+      // At the start of a new over: find bowler of previous over
+      const prevDelivery = deliveries.find((d) => d.over_number === currentOverNum - 1);
+      if (prevDelivery) lastOverBowlerId = prevDelivery.bowler_id;
+    }
+  }
+
+  // Quota calculation (max 20% of innings total overs in limited overs)
+  const maxQuota = maxOvers ? Math.max(1, Math.ceil(maxOvers / 5)) : null;
 
   const battingStats = scorecard?.batting || [];
   const bowlingStats = scorecard?.bowling || [];
@@ -152,11 +176,27 @@ export default function BattersBowlerHUD({
               className="player-select"
             >
               <option value="" disabled>Select Bowler</option>
-              {bowlingSquad.map((p) => (
-                <option key={p.player_id} value={p.player_id}>
-                  {p.player?.name}
-                </option>
-              ))}
+              {bowlingSquad.map((p) => {
+                const bStat = getBowlerStat(p.player_id);
+                const [ovsStr] = (bStat.overs || '0.0').split('.');
+                const fullOversBowled = parseInt(ovsStr, 10) || 0;
+                const isConsecutiveRestricted = lastOverBowlerId === p.player_id;
+                const isQuotaReached = maxQuota !== null && fullOversBowled >= maxQuota && bowlerId !== p.player_id;
+
+                let disabledReason = '';
+                if (isConsecutiveRestricted) disabledReason = ' (Bowled last over)';
+                else if (isQuotaReached) disabledReason = ` (Max ${maxQuota} ov bowled)`;
+
+                return (
+                  <option
+                    key={p.player_id}
+                    value={p.player_id}
+                    disabled={isConsecutiveRestricted || isQuotaReached}
+                  >
+                    {p.player?.name} ({bStat.overs} ov){disabledReason}
+                  </option>
+                );
+              })}
             </select>
             {bowlerId && (
               <button

@@ -284,3 +284,45 @@ def test_second_innings_and_match_resolution(client):
     match_reopened = client.get(f"/matches/{match_id}").json()
     assert match_reopened["status"] == "LIVE"
     assert match_reopened["winner_team_id"] is None
+
+
+def test_consecutive_overs_and_quota_validation(client):
+    env = _setup_match_and_innings(client)
+    inn_id = env["innings"]["id"]
+
+    # Bowl complete over 1 (6 legal balls) by bowler
+    for _ in range(6):
+        client.post(
+            f"/innings/{inn_id}/deliveries",
+            json={
+                "batter_id": env["b1"],
+                "non_striker_id": env["b2"],
+                "bowler_id": env["bowler"],
+                "runs_off_bat": 0,
+            },
+        )
+
+    # Over 2 starts. Attempt to bowl with same bowler -> MUST FAIL (MCC Law 17.6)
+    res_consec = client.post(
+        f"/innings/{inn_id}/deliveries",
+        json={
+            "batter_id": env["b1"],
+            "non_striker_id": env["b2"],
+            "bowler_id": env["bowler"],
+            "runs_off_bat": 1,
+        },
+    )
+    assert res_consec.status_code == 400
+    assert "consecutive overs" in res_consec.json()["detail"].lower()
+
+    # Changing to another bowler (fielder) succeeds
+    res_ok = client.post(
+        f"/innings/{inn_id}/deliveries",
+        json={
+            "batter_id": env["b1"],
+            "non_striker_id": env["b2"],
+            "bowler_id": env["fielder"],
+            "runs_off_bat": 1,
+        },
+    )
+    assert res_ok.status_code == 201
