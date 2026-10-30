@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import PlayerStatsModal from './PlayerStatsModal';
 
 export default function BattersBowlerHUD({
   strikerId,
@@ -11,6 +12,8 @@ export default function BattersBowlerHUD({
   bowlingSquad,
   scorecard,
 }) {
+  const [inspectingPlayerId, setInspectingPlayerId] = useState(null);
+
   const battingStats = scorecard?.batting || [];
   const bowlingStats = scorecard?.bowling || [];
 
@@ -62,6 +65,16 @@ export default function BattersBowlerHUD({
                 </option>
               ))}
             </select>
+            {strikerId && (
+              <button
+                type="button"
+                className="btn-stat-icon"
+                title="View Career Stats"
+                onClick={() => setInspectingPlayerId(strikerId)}
+              >
+                📊
+              </button>
+            )}
           </div>
           <div className="player-stats">
             <span className="runs-balls">
@@ -89,6 +102,16 @@ export default function BattersBowlerHUD({
                 </option>
               ))}
             </select>
+            {nonStrikerId && (
+              <button
+                type="button"
+                className="btn-stat-icon"
+                title="View Career Stats"
+                onClick={() => setInspectingPlayerId(nonStrikerId)}
+              >
+                📊
+              </button>
+            )}
           </div>
           <div className="player-stats">
             <span className="runs-balls">
@@ -135,6 +158,16 @@ export default function BattersBowlerHUD({
                 </option>
               ))}
             </select>
+            {bowlerId && (
+              <button
+                type="button"
+                className="btn-stat-icon"
+                title="View Career Stats"
+                onClick={() => setInspectingPlayerId(bowlerId)}
+              >
+                📊
+              </button>
+            )}
           </div>
           <div className="player-stats">
             <span className="runs-balls">
@@ -144,6 +177,12 @@ export default function BattersBowlerHUD({
           </div>
         </div>
       </div>
+
+      {/* Player Career Stats Modal */}
+      <PlayerStatsModal
+        playerId={inspectingPlayerId}
+        onClose={() => setInspectingPlayerId(null)}
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
+import PlayerStatsModal from './PlayerStatsModal';
 
 const PLAYER_ROLES = [
   'BATTER',
@@ -25,7 +26,7 @@ export default function TeamsPlayersView() {
   const [newPlayerRole, setNewPlayerRole] = useState('ALL_ROUNDER');
 
   // Player Stats modal
-  const [selectedPlayerStats, setSelectedPlayerStats] = useState(null);
+  const [selectedPlayerId, setSelectedPlayerId] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -112,14 +113,8 @@ export default function TeamsPlayersView() {
   };
 
   // View Player Career Stats
-  const handleViewStats = async (playerId) => {
-    try {
-      setError(null);
-      const stats = await api.getPlayerStatistics(playerId);
-      setSelectedPlayerStats(stats);
-    } catch (err) {
-      setError(err.message);
-    }
+  const handleViewStats = (playerId) => {
+    setSelectedPlayerId(playerId);
   };
 
   return (
@@ -313,54 +308,10 @@ export default function TeamsPlayersView() {
       )}
 
       {/* Player Stats Modal */}
-      {selectedPlayerStats && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h3>📈 {selectedPlayerStats.player_name} — Career Stats</h3>
-              <button type="button" className="close-btn" onClick={() => setSelectedPlayerStats(null)}>✕</button>
-            </div>
-            <div className="stats-breakdown">
-              <div className="stats-section">
-                <h4>Batting</h4>
-                <div className="stats-grid">
-                  <div><span>Innings:</span> <strong>{selectedPlayerStats.batting.innings}</strong></div>
-                  <div><span>Runs:</span> <strong>{selectedPlayerStats.batting.runs}</strong></div>
-                  <div><span>High Score:</span> <strong>{selectedPlayerStats.batting.highest_score}</strong></div>
-                  <div><span>Avg:</span> <strong>{selectedPlayerStats.batting.average ?? '-'}</strong></div>
-                  <div><span>SR:</span> <strong>{selectedPlayerStats.batting.strike_rate}</strong></div>
-                  <div><span>4s / 6s:</span> <strong>{selectedPlayerStats.batting.fours} / {selectedPlayerStats.batting.sixes}</strong></div>
-                </div>
-              </div>
-
-              <div className="stats-section">
-                <h4>Bowling</h4>
-                <div className="stats-grid">
-                  <div><span>Overs:</span> <strong>{selectedPlayerStats.bowling.overs}</strong></div>
-                  <div><span>Wickets:</span> <strong>{selectedPlayerStats.bowling.wickets}</strong></div>
-                  <div><span>Runs:</span> <strong>{selectedPlayerStats.bowling.runs_conceded}</strong></div>
-                  <div><span>Economy:</span> <strong>{selectedPlayerStats.bowling.economy}</strong></div>
-                  <div><span>Best:</span> <strong>{selectedPlayerStats.bowling.best_bowling ?? '-'}</strong></div>
-                </div>
-              </div>
-
-              <div className="stats-section">
-                <h4>Fielding</h4>
-                <div className="stats-grid">
-                  <div><span>Catches:</span> <strong>{selectedPlayerStats.fielding.catches}</strong></div>
-                  <div><span>Run Outs:</span> <strong>{selectedPlayerStats.fielding.run_outs}</strong></div>
-                  <div><span>Stumpings:</span> <strong>{selectedPlayerStats.fielding.stumpings}</strong></div>
-                </div>
-              </div>
-            </div>
-            <div className="modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setSelectedPlayerStats(null)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PlayerStatsModal
+        playerId={selectedPlayerId}
+        onClose={() => setSelectedPlayerId(null)}
+      />
     </div>
   );
 }

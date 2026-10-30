@@ -16,6 +16,7 @@ export default function App() {
   const [match, setMatch] = useState(null);
   const [innings, setInnings] = useState(null);
   const [scorecard, setScorecard] = useState(null);
+  const [matchScorecard, setMatchScorecard] = useState(null);
   const [matchSummary, setMatchSummary] = useState(null);
   const [deliveries, setDeliveries] = useState([]);
 
@@ -71,6 +72,7 @@ export default function App() {
         let inn = null;
         try {
           const mScorecard = await api.getMatchScorecard(selectedMatchId);
+          setMatchScorecard(mScorecard);
           setMatchSummary(mScorecard.summary_text);
           if (mScorecard.innings && mScorecard.innings.length > 0) {
             const latestInnId = mScorecard.innings[mScorecard.innings.length - 1].innings_id;
@@ -132,6 +134,7 @@ export default function App() {
       ]);
       setScorecard(sc);
       setDeliveries(delivs);
+      setMatchScorecard(mScorecard);
       setMatchSummary(mScorecard.summary_text);
       setMatch(m);
     } catch (err) {
@@ -426,7 +429,7 @@ export default function App() {
             </div>
           ) : (
             /* Full Scorecard View */
-            <ScorecardView scorecard={scorecard} />
+            <ScorecardView scorecard={scorecard} matchScorecard={matchScorecard} />
           )}
 
           {/* Wicket Modal */}

@@ -1,7 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
+import PlayerStatsModal from './PlayerStatsModal';
 
-export default function ScorecardView({ scorecard }) {
-  if (!scorecard) return <div className="loading">Loading scorecard...</div>;
+export default function ScorecardView({ scorecard, matchScorecard }) {
+  const [selectedPlayerId, setSelectedPlayerId] = useState(null);
+
+  // If matchScorecard has innings, default to viewing the latest innings
+  const inningsList = matchScorecard?.innings || (scorecard ? [scorecard] : []);
+  const [selectedInningsIdx, setSelectedInningsIdx] = useState(
+    inningsList.length > 0 ? inningsList.length - 1 : 0
+  );
+
+  const activeInnings = inningsList[selectedInningsIdx] || scorecard;
+
+  if (!activeInnings) return <div className="loading">Loading scorecard...</div>;
 
   const {
     batting = [],
@@ -13,12 +24,46 @@ export default function ScorecardView({ scorecard }) {
     run_rate,
     fall_of_wickets = [],
     current_partnership,
-  } = scorecard;
+    batting_team,
+    bowling_team,
+  } = activeInnings;
 
   return (
     <div className="scorecard-container">
+      {/* Match Outcome / Status Banner */}
+      {matchScorecard?.summary_text && (
+        <div className="match-summary-banner">
+          <span>🏆 {matchScorecard.summary_text}</span>
+        </div>
+      )}
+
+      {/* Multiple Innings Selector */}
+      {inningsList.length > 1 && (
+        <div className="innings-selector-tabs">
+          {inningsList.map((inn, idx) => (
+            <button
+              key={inn.innings_id}
+              type="button"
+              className={`innings-tab ${selectedInningsIdx === idx ? 'active' : ''}`}
+              onClick={() => setSelectedInningsIdx(idx)}
+            >
+              <span className="tab-team">{inn.batting_team?.short_name || `Innings ${idx + 1}`}</span>
+              <span className="tab-score">
+                {inn.total_runs}/{inn.wickets_lost} ({inn.overs} ov)
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Innings Card Header */}
       <div className="card-header">
-        <h3>📊 Innings Scorecard</h3>
+        <div>
+          <h3>
+            📊 {batting_team?.name || 'Batting'} Innings
+          </h3>
+          <span className="sub-text">vs {bowling_team?.name || 'Bowling'}</span>
+        </div>
         <span className="summary-badge">
           {total_runs}/{wickets_lost} ({overs} ov, RR: {run_rate})
         </span>
@@ -42,7 +87,16 @@ export default function ScorecardView({ scorecard }) {
           <tbody>
             {batting.map((b) => (
               <tr key={b.player_id}>
-                <td className="text-left font-bold">{b.player_name}</td>
+                <td className="text-left font-bold">
+                  <button
+                    type="button"
+                    className="player-name-link"
+                    title="View career stats"
+                    onClick={() => setSelectedPlayerId(b.player_id)}
+                  >
+                    {b.player_name}
+                  </button>
+                </td>
                 <td className="text-left dismissal-cell">{b.dismissal_text}</td>
                 <td className="font-bold">{b.runs}</td>
                 <td>{b.balls_faced}</td>
@@ -69,7 +123,15 @@ export default function ScorecardView({ scorecard }) {
           <div className="fow-list">
             {fall_of_wickets.map((f, i) => (
               <span key={f.wicket_number} className="fow-item">
-                <strong>{f.score}-{f.wicket_number}</strong> ({f.player_name}, {f.overs} ov)
+                <strong>{f.score}-{f.wicket_number}</strong> (
+                <button
+                  type="button"
+                  className="player-name-link-inline"
+                  onClick={() => setSelectedPlayerId(f.player_id)}
+                >
+                  {f.player_name}
+                </button>
+                , {f.overs} ov)
                 {i < fall_of_wickets.length - 1 && <span className="fow-sep">, </span>}
               </span>
             ))}
@@ -80,7 +142,7 @@ export default function ScorecardView({ scorecard }) {
       {/* Active Partnership */}
       {current_partnership && (
         <div className="partnership-summary-box">
-          <span className="partnership-title">🤝 Current Partnership:</span>
+          <span className="partnership-title">🤝 Active Partnership:</span>
           <span className="partnership-value">
             <strong>{current_partnership.runs}</strong> runs ({current_partnership.balls} balls)
           </span>
@@ -110,7 +172,16 @@ export default function ScorecardView({ scorecard }) {
           <tbody>
             {bowling.map((bw) => (
               <tr key={bw.player_id}>
-                <td className="text-left font-bold">{bw.player_name}</td>
+                <td className="text-left font-bold">
+                  <button
+                    type="button"
+                    className="player-name-link"
+                    title="View career stats"
+                    onClick={() => setSelectedPlayerId(bw.player_id)}
+                  >
+                    {bw.player_name}
+                  </button>
+                </td>
                 <td>{bw.overs}</td>
                 <td>{bw.maidens}</td>
                 <td>{bw.runs_conceded}</td>
@@ -122,6 +193,12 @@ export default function ScorecardView({ scorecard }) {
           </tbody>
         </table>
       </div>
+
+      {/* Player Career Stats Modal */}
+      <PlayerStatsModal
+        playerId={selectedPlayerId}
+        onClose={() => setSelectedPlayerId(null)}
+      />
     </div>
   );
 }
