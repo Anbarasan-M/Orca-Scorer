@@ -1,15 +1,18 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-// https://vite.dev/config/
+const apiTarget = process.env.API_PROXY_TARGET || 'http://127.0.0.1:8000'
+
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: '0.0.0.0',
+    port: 5173,
     proxy: {
-      '/teams': 'http://127.0.0.1:8000',
-      '/players': 'http://127.0.0.1:8000',
-      '/matches': 'http://127.0.0.1:8000',
-      '/innings': 'http://127.0.0.1:8000',
+      '/teams': apiTarget,
+      '/players': apiTarget,
+      '/matches': apiTarget,
+      '/innings': apiTarget,
     },
   },
 })
