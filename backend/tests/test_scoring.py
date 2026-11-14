@@ -326,3 +326,91 @@ def test_consecutive_overs_and_quota_validation(client):
         },
     )
     assert res_ok.status_code == 201
+
+
+def test_wicket_on_wide_is_rejected(client):
+    """The DB CHECK constraint forbids runs_off_bat on a wide ball.
+
+    Why this matters: a wide goes straight to wide_runs. Any value in
+    runs_off_bat on the same delivery would double-count those runs.
+    The constraint is defined in the deliveries model and enforced by
+    PostgreSQL; the API must surface it as a client error (4xx), not a
+    500 Internal Server Error.
+    """
+    env = _setup_match_and_innings(client)
+    inn_id = env["innings"]["id"]
+
+    # Attempt: wide ball that also has runs_off_bat — the DB rejects this
+    res = client.post(
+        f"/innings/{inn_id}/deliveries",
+        json={
+            "batter_id": env["b1"],
+            "non_striker_id": env["b2"],
+            "bowler_id": env["bowler"],
+            "wide_runs": 1,
+            "runs_off_bat": 4,  # illegal: bat runs are disallowed on a wide
+        },
+    )
+    # Must be a client error — not a 500
+    assert res.status_code in (400, 422), (
+        f"Expected 400 or 422 for illegal wide+runs_off_bat, got {res.status_code}: "
+        f"{res.json()}"
+    )
+
+
+def test_undo_cascades_wicket(client):
+    """Undoing a delivery that contained a wicket must also remove the wicket row.
+
+    Why this matters: `wickets` has ON DELETE CASCADE from `deliveries`.
+    If the cascade were missing, an undo would leave a dangling wicket —
+    the scorecard would still show a dismissal for a ball that never happened.
+    This test proves the cascade works end-to-end through the API.
+    """
+    env = _setup_match_and_innings(client)
+    inn_id = env["innings"]["id"]
+
+    # Ball 1: b1 scores a single (no wicket)
+    client.post(
+        f"/innings/{inn_id}/deliveries",
+        json={
+            "batter_id": env["b1"],
+            "non_striker_id": env["b2"],
+            "bowler_id": env["bowler"],
+            "runs_off_bat": 1,
+        },
+    )
+
+    # Ball 2: b2 is caught — this creates a wicket row linked to the delivery
+    client.post(
+        f"/innings/{inn_id}/deliveries",
+        json={
+            "batter_id": env["b2"],
+            "non_striker_id": env["b1"],
+            "bowler_id": env["bowler"],
+            "runs_off_bat": 0,
+            "wicket": {
+                "player_out_id": env["b2"],
+                "wicket_type": "CAUGHT",
+                "fielder_id": env["fielder"],
+            },
+        },
+    )
+
+    # Confirm the scorecard shows 1 wicket before the undo
+    sc_before = client.get(f"/innings/{inn_id}/scorecard").json()
+    assert sc_before["wickets_lost"] == 1, "Wicket should be recorded before undo"
+
+    # Undo the wicket delivery
+    undo_res = client.delete(f"/innings/{inn_id}/deliveries/last")
+    assert undo_res.status_code == 200
+
+    # The delivery is gone — only ball 1 remains
+    deliveries = client.get(f"/innings/{inn_id}/deliveries").json()
+    assert len(deliveries) == 1
+
+    # The cascaded wicket row is also gone — scorecard must show 0 wickets
+    sc_after = client.get(f"/innings/{inn_id}/scorecard").json()
+    assert sc_after["wickets_lost"] == 0, (
+        "Wicket row must be cascade-deleted when its delivery is undone"
+    )
+    assert sc_after["total_runs"] == 1  # only ball 1's run remains
